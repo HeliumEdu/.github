@@ -7,7 +7,9 @@ body:
 - type: markdown
   attributes:
     value: |
-      Consider [supporting the project](https://github.com/sponsors/alexdlaird) to have your request prioritized.
+      Please we aware that Helium is free and is not under active development. Though [supporting the project financially](https://github.com/sponsors/alexdlaird) is appreciated (since Helium has operating costs, even though it is free to use), we make no guarantees bug reports will be looked at or considered.
+
+      Though this project is not under active development, we are still happy to review pull requests submitted by the community to resolve bugs, so submitting a report of your experience may still be helpful to us and others.
 
 - type: checkboxes
   id: ack
@@ -18,7 +20,6 @@ body:
       required: true
     - label: I have searched [Issues](issues?q=is%3Aissue) to see if the bug has already been reported
       required: true
-    - label: I have searched [Stack Overflow](https://stackoverflow.com/questions/) to ensure the issue I'm experiencing has not already been discussed
 
 - type: input
   id: os-version
@@ -28,19 +29,27 @@ body:
   validations:
     required: true
 
-- type: textarea
-  id: describe-the-bug
+- type: input
+  id: browser-version
   attributes:
-    label: Describe the Bug
-    description: A clear and concise description of what the bug is, including exceptions thrown.
+    label: Browser & Version
+    placeholder: Chrome 122.0.6261.57
+  validations:
+    required: true
+
+- type: input
+  id: username
+  attributes:
+    label: Helium Username
+    placeholder: contact@alexlaird.com
   validations:
     required: true
 
 - type: textarea
-  id: steps-to-reproduce
+  id: describe-the-bug
   attributes:
-    label: Steps to Reproduce
-    description: A snippet of the code used to reproduce the behavior.
+    label: Describe the Bug
+    description: A clear and concise description of what the bug is and the steps you took that caused it.
   validations:
     required: true
 
