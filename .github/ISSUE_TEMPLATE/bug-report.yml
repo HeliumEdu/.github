@@ -50,6 +50,7 @@ body:
   attributes:
     label: Describe the Bug
     description: A clear and concise description of what the bug is and the steps you took that caused it.
+    placeholder: Please note that we need details to troubleshoot. "Creating an assignment didn't work" is not a helpful descrption of an error and will likely just be closed. What was the name of the assignment? Course Group? Were you trying to add Categories to it? Whatever the error, we need contextual details surrounding it to be able to troubleshoot the issue.
   validations:
     required: true
 
@@ -58,3 +59,9 @@ body:
   attributes:
     label: Expected Behavior
     description: A brief description of what you expected to happen.
+    
+- type: textarea
+  id: console-output
+  attributes:
+    label: Console Output / Error Responses
+    description: If you're a superuser, please provide any console output / stacktraces or responses from failed requests in the browser's debbuger.
