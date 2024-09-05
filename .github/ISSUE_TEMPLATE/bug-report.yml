@@ -49,8 +49,10 @@ body:
   id: describe-the-bug
   attributes:
     label: Describe the Bug
-    description: A clear and concise description of what the bug is and the steps you took that caused it.
-    placeholder: Please note that we need details to troubleshoot. "Creating an assignment didn't work" is not a helpful description of an error and will likely just be closed. What was the name of the assignment? Course Group? Did it have Categories? Whatever the error, we need contextual details surrounding it to be able to troubleshoot the issue.
+    description: |
+      A clear and concise description of what the bug is and the steps you took that caused it.
+
+      Please note that we need details to troubleshoot. "Creating an assignment didn't work" is not a helpful description of an error and will likely just be closed. What was the name of the assignment? Course Group? Did it have Categories? Whatever the error, we need contextual details surrounding it to be able to troubleshoot the issue.
   validations:
     required: true
 
