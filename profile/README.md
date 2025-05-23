@@ -1,6 +1,6 @@
 <p align="center"><img src="https://www.heliumedu.com/assets/img/logo_full_blue.png" /></p>
 
-Hello 👋, and welcome! Here you will find the source code for all Helium Edu projects, including [Helium Student Planner's deployment infastructure](https://github.com/heliumedu/deploy), [`helium-cli`](https://github.com/HeliumEdu/heliumcli), and the Django [`template-project`](https://github.com/HeliumEdu/template-project).
+Hello 👋, and welcome! Here you will find the source code for all [Helium Edu projects](https://www.heliumedu.com), including [Helium Student Planner's deployment infastructure](https://github.com/heliumedu/deploy), [`helium-cli`](https://github.com/HeliumEdu/heliumcli), and the Django [`template-project`](https://github.com/HeliumEdu/template-project).
 
 Please we aware that Helium is free and is not under active development. Though [supporting the project financially](https://github.com/sponsors/alexdlaird) is appreciated ❤️ (since Helium has operating costs, even though it is free to use), we make no guarantees bug reports will be looked at or considered.
 
