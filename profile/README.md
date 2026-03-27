@@ -1,6 +1,6 @@
 <p align="center"><img src="https://www.heliumedu.com/assets/img/logo_full_blue.png" /></p>
 
-Hello 👋, and welcome! This organization owns the source code for [Helium Edu](https://www.heliumedu.com) projects, including [Helium Student Planner's deployment infastructure](https://github.com/heliumedu/infra), and also maintains [`helium-cli`](https://github.com/HeliumEdu/heliumcli) and Django [`template-project`](https://github.com/HeliumEdu/template-project).
+Hello 👋, and welcome! This organization owns the source code for [Helium Edu](https://www.heliumedu.com), including [Helium Student Planner's deployment infastructure](https://github.com/heliumedu/infra), and also maintains [`helium-cli`](https://github.com/HeliumEdu/heliumcli) and Django [`template-project`](https://github.com/HeliumEdu/template-project).
 
 While the development, maintenance, and direction of Helium is a group effort, I ([Alex Laird](https://github.com/alexdlaird)) am the one primarily writing the code, designing the features, and making sure everything feels polished and reliable.
 
