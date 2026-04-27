@@ -1,0 +1,51 @@
+name: 'Determine Version'
+description: 'Resolve the latest semver tag from a HeliumEdu repo, or pass through a specific version.'
+
+inputs:
+  token:
+    description: 'GitHub token with read access to the target repo'
+    required: true
+  repo:
+    description: 'Repository name under HeliumEdu (e.g. "platform", "frontend")'
+    required: true
+  specific-version:
+    description: 'Explicit version to use instead of resolving the latest tag'
+    required: false
+    default: ''
+  version-regex:
+    description: 'jq-compatible regex for selecting semver tags'
+    required: false
+    default: '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+outputs:
+  version:
+    description: 'Resolved version string'
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve version
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repo }}
+        SPECIFIC_VERSION: ${{ inputs.specific-version }}
+        VERSION_REGEX: ${{ inputs.version-regex }}
+      run: |
+        if [ -n "$SPECIFIC_VERSION" ]; then
+          echo "Using specific version: ${SPECIFIC_VERSION}"
+          echo "version=${SPECIFIC_VERSION}" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        VERSION=$(gh api "repos/HeliumEdu/${REPO}/tags" --jq "[.[] | select(.name | test(\"${VERSION_REGEX}\"))][0].name")
+
+        if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+          echo "::error::No version tags matching '${VERSION_REGEX}' found in HeliumEdu/${REPO}"
+          exit 1
+        fi
+
+        echo "Using latest version: ${VERSION}"
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
