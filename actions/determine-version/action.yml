@@ -40,7 +40,7 @@ runs:
           exit 0
         fi
 
-        VERSION=$(gh api "repos/HeliumEdu/${REPO}/tags" --jq "[.[] | select(.name | test(\"${VERSION_REGEX}\"))][0].name")
+        VERSION=$(gh api "repos/HeliumEdu/${REPO}/tags" | jq -r --arg regex "$VERSION_REGEX" '[.[] | select(.name | test($regex))][0].name')
 
         if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
           echo "::error::No version tags matching '${VERSION_REGEX}' found in HeliumEdu/${REPO}"
