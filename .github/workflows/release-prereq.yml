@@ -180,7 +180,7 @@ jobs:
         run: |
           eval "${VALIDATE_COMMAND}"
 
-      - name: Wait for CI to finish on develop HEAD
+      - name: Wait for build.yml on develop HEAD to succeed
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
@@ -191,37 +191,76 @@ jobs:
           DEADLINE=$(( $(date +%s) + CI_TIMEOUT_MINUTES * 60 ))
           POLL_INTERVAL=30
 
-          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-            RUNS=$(gh api "repos/${REPO_SLUG}/commits/${DEVELOP_SHA}/check-runs" --paginate --jq '.check_runs')
-            RUNS=$(echo "$RUNS" | jq --arg rid "$GITHUB_RUN_ID" \
-              '[.[] | select(.details_url | contains("/runs/" + $rid + "/") | not)]')
-            RUN_COUNT=$(echo "$RUNS" | jq 'length')
-            NON_SUCCESS=$(echo "$RUNS" | jq '[.[] | select(.status == "completed" and .conclusion != "success")]')
-            NON_SUCCESS_COUNT=$(echo "$NON_SUCCESS" | jq 'length')
-            PENDING_COUNT=$(echo "$RUNS" | jq '[.[] | select(.status != "completed")] | length')
+          # Guard: develop must not have moved since boundary was recorded
+          CURRENT=$(gh api "repos/${REPO_SLUG}/git/refs/heads/develop" --jq .object.sha)
+          if [ "$CURRENT" != "$DEVELOP_SHA" ]; then
+            echo "::error::develop HEAD moved during release (was ${DEVELOP_SHA}, now ${CURRENT}). Abort and re-dispatch."
+            exit 1
+          fi
 
-            if [ "$NON_SUCCESS_COUNT" -gt 0 ]; then
-              echo "::error::CI on develop HEAD has non-success checks (only 'success' is acceptable):"
-              echo "$NON_SUCCESS" | jq -r '.[] | "  - \(.name): \(.conclusion)"'
+          latest_run() {
+            gh api "repos/${REPO_SLUG}/actions/workflows/build.yml/runs?head_sha=${DEVELOP_SHA}" \
+              --jq '.workflow_runs | max_by(.id) // empty'
+          }
+
+          LATEST=$(latest_run)
+          if [ -z "$LATEST" ]; then
+            RUN_ID=""; RUN_STATUS=""; RUN_CONCLUSION=""
+          else
+            RUN_ID=$(jq -r '.id' <<< "$LATEST")
+            RUN_STATUS=$(jq -r '.status' <<< "$LATEST")
+            RUN_CONCLUSION=$(jq -r '.conclusion // ""' <<< "$LATEST")
+          fi
+
+          TRIGGER_FRESH=false
+          if [ -z "$RUN_ID" ]; then
+            echo "No build.yml run for ${DEVELOP_SHA}; triggering fresh dispatch"
+            TRIGGER_FRESH=true
+          elif [ "$RUN_STATUS" = "completed" ] && [ "$RUN_CONCLUSION" != "success" ]; then
+            echo "Latest build.yml run ${RUN_ID} concluded '${RUN_CONCLUSION}'; triggering fresh dispatch"
+            TRIGGER_FRESH=true
+          else
+            echo "Tracking existing build.yml run ${RUN_ID} (status=${RUN_STATUS})"
+          fi
+
+          if [ "$TRIGGER_FRESH" = "true" ]; then
+            PRIOR_ID="${RUN_ID:-0}"
+            gh workflow run build.yml --ref develop --repo "${REPO_SLUG}"
+            for _ in $(seq 1 12); do
+              sleep 5
+              NEXT=$(latest_run)
+              [ -z "$NEXT" ] && continue
+              NEXT_ID=$(jq -r '.id' <<< "$NEXT")
+              if [ "$NEXT_ID" != "$PRIOR_ID" ]; then
+                RUN_ID=$NEXT_ID
+                echo "Fresh build.yml run registered: ${RUN_ID}"
+                break
+              fi
+            done
+            if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "$PRIOR_ID" ]; then
+              echo "::error::Fresh build.yml dispatch did not register a new run for ${DEVELOP_SHA} within 60s"
               exit 1
             fi
+          fi
 
-            if [ "$RUN_COUNT" -gt 0 ] && [ "$PENDING_COUNT" -eq 0 ]; then
-              echo "All CI checks succeeded on develop HEAD ($RUN_COUNT runs)"
-              exit 0
-            fi
-
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            RUN=$(gh api "repos/${REPO_SLUG}/actions/runs/${RUN_ID}")
+            STATUS=$(jq -r '.status' <<< "$RUN")
             REMAINING=$(( DEADLINE - $(date +%s) ))
-            if [ "$RUN_COUNT" -eq 0 ]; then
-              echo "No CI runs registered yet for $DEVELOP_SHA, waiting (${REMAINING}s remaining)..."
-            else
-              echo "$PENDING_COUNT/$RUN_COUNT checks still running, waiting (${REMAINING}s remaining)..."
+            if [ "$STATUS" = "completed" ]; then
+              CONCLUSION=$(jq -r '.conclusion // ""' <<< "$RUN")
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "build.yml run ${RUN_ID} succeeded on develop HEAD"
+                exit 0
+              fi
+              echo "::error::build.yml run ${RUN_ID} concluded '${CONCLUSION}'"
+              exit 1
             fi
-
+            echo "build.yml run ${RUN_ID} status=${STATUS} (${REMAINING}s remaining)"
             sleep $POLL_INTERVAL
           done
 
-          echo "::error::Timed out waiting for CI on develop HEAD after ${CI_TIMEOUT_MINUTES} minutes"
+          echo "::error::Timed out waiting for build.yml run ${RUN_ID} after ${CI_TIMEOUT_MINUTES} minutes"
           exit 1
 
       - name: Generate release notes from squashed commits
