@@ -20,10 +20,10 @@ on:
         required: true
         type: string
       validate_command:
-        description: "Per-repo validation hook. VERSION env var available."
+        description: "Optional per-repo validation hook. VERSION env available. Empty default = no validation."
         required: false
         type: string
-        default: 'make validate-release VERSION=${VERSION}'
+        default: ''
       additional_bump_command:
         description: "Optional shell command run after bump_command, before validation. OLD_VERSION + NEW_VERSION env available. Use for lockfile refresh or auxiliary file updates."
         required: false
@@ -188,6 +188,7 @@ jobs:
           fi
 
       - name: Run repo validation
+        if: inputs.validate_command != ''
         env:
           VERSION: ${{ steps.read-new.outputs.version }}
           VALIDATE_COMMAND: ${{ inputs.validate_command }}
