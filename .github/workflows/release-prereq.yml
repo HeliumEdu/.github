@@ -24,6 +24,11 @@ on:
         required: false
         type: string
         default: 'make validate-release VERSION=${VERSION}'
+      additional_bump_command:
+        description: "Optional shell command run after bump_command, before validation. OLD_VERSION + NEW_VERSION env available. Use for lockfile refresh or auxiliary file updates."
+        required: false
+        type: string
+        default: ''
       ci_timeout_minutes:
         description: "Max minutes to wait for develop CI to finish before aborting"
         required: false
@@ -161,6 +166,15 @@ jobs:
           fi
           echo "version=${NEW}" >> "$GITHUB_OUTPUT"
           echo "New version: ${NEW}"
+
+      - name: Run additional_bump_command
+        if: inputs.additional_bump_command != ''
+        env:
+          OLD_VERSION: ${{ steps.read-current.outputs.version }}
+          NEW_VERSION: ${{ steps.read-new.outputs.version }}
+          ADDITIONAL_BUMP_COMMAND: ${{ inputs.additional_bump_command }}
+        run: |
+          eval "${ADDITIONAL_BUMP_COMMAND}"
 
       - name: Pre-validate tag does not exist
         env:
