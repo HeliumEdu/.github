@@ -2,12 +2,6 @@ name: Release Cleanup (Merge main into develop)
 
 on:
   workflow_call:
-    inputs:
-      squash_boundary:
-        description: "develop SHA squashed in pre-req (informational only; preserved for caller compat)"
-        required: false
-        type: string
-        default: ''
     secrets:
       bot_app_id:
         required: true
@@ -16,7 +10,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   cleanup:

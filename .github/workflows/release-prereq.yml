@@ -19,21 +19,6 @@ on:
         description: "owner/repo"
         required: true
         type: string
-      validate_command:
-        description: "Optional per-repo validation hook. VERSION env available. Empty default = no validation."
-        required: false
-        type: string
-        default: ''
-      additional_bump_command:
-        description: "Optional shell command run after bump_command, before validation. OLD_VERSION + NEW_VERSION env available. Use for lockfile refresh or auxiliary file updates."
-        required: false
-        type: string
-        default: ''
-      ci_timeout_minutes:
-        description: "Max minutes to wait for develop CI to finish before aborting"
-        required: false
-        type: number
-        default: 30
     secrets:
       bot_app_id:
         required: true
@@ -44,10 +29,6 @@ on:
         value: ${{ jobs.prereq.outputs.version }}
       squash_commit_sha:
         value: ${{ jobs.prereq.outputs.squash_commit_sha }}
-      squash_boundary:
-        value: ${{ jobs.prereq.outputs.squash_boundary }}
-      release_notes:
-        value: ${{ jobs.prereq.outputs.release_notes }}
 
 permissions:
   contents: write
@@ -63,8 +44,6 @@ jobs:
     outputs:
       version: ${{ steps.read-new.outputs.version }}
       squash_commit_sha: ${{ steps.push.outputs.sha }}
-      squash_boundary: ${{ steps.boundary.outputs.sha }}
-      release_notes: ${{ steps.notes.outputs.body }}
 
     steps:
       - name: Generate GitHub App token
@@ -167,15 +146,6 @@ jobs:
           echo "version=${NEW}" >> "$GITHUB_OUTPUT"
           echo "New version: ${NEW}"
 
-      - name: Run additional_bump_command
-        if: inputs.additional_bump_command != ''
-        env:
-          OLD_VERSION: ${{ steps.read-current.outputs.version }}
-          NEW_VERSION: ${{ steps.read-new.outputs.version }}
-          ADDITIONAL_BUMP_COMMAND: ${{ inputs.additional_bump_command }}
-        run: |
-          eval "${ADDITIONAL_BUMP_COMMAND}"
-
       - name: Pre-validate tag does not exist
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -187,20 +157,12 @@ jobs:
             exit 1
           fi
 
-      - name: Run repo validation
-        if: inputs.validate_command != ''
-        env:
-          VERSION: ${{ steps.read-new.outputs.version }}
-          VALIDATE_COMMAND: ${{ inputs.validate_command }}
-        run: |
-          eval "${VALIDATE_COMMAND}"
-
       - name: Wait for build.yml on develop HEAD to succeed
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
           REPO_SLUG: ${{ inputs.repo_slug }}
-          CI_TIMEOUT_MINUTES: ${{ inputs.ci_timeout_minutes }}
+          CI_TIMEOUT_MINUTES: 30
         run: |
           set -euo pipefail
           DEADLINE=$(( $(date +%s) + CI_TIMEOUT_MINUTES * 60 ))
