@@ -1,0 +1,126 @@
+name: Release Cleanup (Sync develop to main)
+
+on:
+  workflow_call:
+    inputs:
+      squash_boundary:
+        description: "develop SHA squashed in pre-req (used to find in-flight commits)"
+        required: true
+        type: string
+    secrets:
+      bot_app_id:
+        required: true
+      bot_private_key:
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    name: Force-push develop to mirror main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.bot_app_id }}
+          private-key: ${{ secrets.bot_private_key }}
+          skip-token-revoke: true
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Get bot user ID
+        id: bot-user
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          echo "user-id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          USER_ID: ${{ steps.bot-user.outputs.user-id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Fetch develop and main
+        run: |
+          git fetch origin develop
+          git fetch origin main
+
+      - name: Guard - abort cleanup if open PRs target develop
+        id: guard
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          OPEN_COUNT=$(gh pr list --base develop --state open --json number --jq 'length')
+          if [ "$OPEN_COUNT" -gt 0 ]; then
+            echo "::warning::${OPEN_COUNT} open PR(s) target develop. Skipping cleanup."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Capture original develop HEAD
+        id: lease
+        if: steps.guard.outputs.skipped == 'false'
+        run: echo "sha=$(git rev-parse origin/develop)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute post-squash commits on develop
+        id: replay
+        if: steps.guard.outputs.skipped == 'false'
+        env:
+          SQUASH_BOUNDARY: ${{ inputs.squash_boundary }}
+        run: |
+          POST=$(git log --pretty=%H --reverse "${SQUASH_BOUNDARY}..origin/develop" || true)
+          if [ -z "$POST" ]; then
+            echo "No in-flight commits to replay"
+          else
+            echo "In-flight commits to replay:"
+            echo "$POST" | sed 's/^/  /'
+          fi
+          {
+            echo "shas<<EOF_REPLAY"
+            echo "$POST"
+            echo "EOF_REPLAY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Reset develop to main and replay in-flight commits
+        if: steps.guard.outputs.skipped == 'false'
+        env:
+          REPLAY_SHAS: ${{ steps.replay.outputs.shas }}
+        run: |
+          git checkout -B develop origin/main
+
+          if [ -n "$REPLAY_SHAS" ]; then
+            while IFS= read -r sha; do
+              [ -z "$sha" ] && continue
+              if git cherry-pick "$sha"; then
+                echo "Replayed $sha"
+              elif git cherry-pick --skip 2>/dev/null; then
+                echo "Skipped empty/duplicate $sha"
+              else
+                echo "::error::Cherry-pick failed for $sha"
+                git cherry-pick --abort || true
+                exit 1
+              fi
+            done <<< "$REPLAY_SHAS"
+          fi
+
+      - name: Force-push develop with lease
+        if: steps.guard.outputs.skipped == 'false'
+        env:
+          LEASE_SHA: ${{ steps.lease.outputs.sha }}
+        run: |
+          git push --force-with-lease="develop:${LEASE_SHA}" origin develop
+          echo "develop synced to main HEAD ($(git rev-parse --short HEAD))"

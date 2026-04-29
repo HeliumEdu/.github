@@ -1,0 +1,235 @@
+name: Release Pre-req (Squash develop into main)
+
+on:
+  workflow_call:
+    inputs:
+      bump_type:
+        description: "build, patch, minor, or major (build is Flutter-only)"
+        required: true
+        type: string
+      bump_command:
+        description: "Shell command that bumps the version [BUMP_TYPE, SEED_VERSION]."
+        required: true
+        type: string
+      read_version_command:
+        description: "Shell command that prints the current version to stdout."
+        required: true
+        type: string
+      repo_slug:
+        description: "owner/repo"
+        required: true
+        type: string
+      validate_command:
+        description: "Per-repo validation hook. VERSION env var available."
+        required: false
+        type: string
+        default: 'make validate-release VERSION=${VERSION}'
+      tag_in_prereq:
+        description: "Tag in pre-req? Set true only for repos that don't tag after build."
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      bot_app_id:
+        required: true
+      bot_private_key:
+        required: true
+    outputs:
+      version:
+        value: ${{ jobs.prereq.outputs.version }}
+      squash_commit_sha:
+        value: ${{ jobs.prereq.outputs.squash_commit_sha }}
+      squash_boundary:
+        value: ${{ jobs.prereq.outputs.squash_boundary }}
+      release_notes:
+        value: ${{ jobs.prereq.outputs.release_notes }}
+      tag_name:
+        value: ${{ jobs.prereq.outputs.tag_name }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  prereq:
+    name: Squash develop into main
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read-new.outputs.version }}
+      squash_commit_sha: ${{ steps.push.outputs.sha }}
+      squash_boundary: ${{ steps.boundary.outputs.sha }}
+      release_notes: ${{ steps.notes.outputs.body }}
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.bot_app_id }}
+          private-key: ${{ secrets.bot_private_key }}
+          skip-token-revoke: true
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Get bot user ID
+        id: bot-user
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          echo "user-id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          USER_ID: ${{ steps.bot-user.outputs.user-id }}
+        run: |
+          git config --global user.name "${APP_SLUG}[bot]"
+          git config --global user.email "${USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Fetch develop
+        run: git fetch origin develop
+
+      - name: Record squash boundary
+        id: boundary
+        run: echo "sha=$(git rev-parse origin/develop)" >> "$GITHUB_OUTPUT"
+
+      - name: Pre-validate (develop ahead of main)
+        run: |
+          AHEAD=$(git rev-list --count main..origin/develop)
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "::error::develop has no new commits over main."
+            exit 1
+          fi
+          echo "develop is ${AHEAD} commits ahead of main"
+
+      - name: Pre-validate (CI green on develop HEAD)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
+          REPO_SLUG: ${{ inputs.repo_slug }}
+        run: |
+          NON_PASSING=$(gh api "repos/${REPO_SLUG}/commits/${DEVELOP_SHA}/check-runs" --paginate \
+            --jq '[.check_runs[] | select((.conclusion // "pending") | IN("success", "skipped", "neutral") | not) | "\(.name): \(.conclusion // "pending")"] | unique')
+          if [ "$NON_PASSING" != "[]" ]; then
+            echo "::error::CI on develop HEAD is not green:"
+            echo "$NON_PASSING" | jq -r '.[]'
+            exit 1
+          fi
+          echo "All CI checks passing on develop HEAD"
+
+      - name: Read current version (pre-bump)
+        id: read-current
+        env:
+          READ_CMD: ${{ inputs.read_version_command }}
+        run: |
+          CURRENT=$(eval "${READ_CMD}")
+          echo "version=${CURRENT}" >> "$GITHUB_OUTPUT"
+          echo "Current version: ${CURRENT}"
+
+      - name: Compute seed semver
+        id: seed
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          CURRENT: ${{ steps.read-current.outputs.version }}
+        run: |
+          SEMVER="${CURRENT%%+*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$SEMVER"
+          case "$BUMP_TYPE" in
+            major) NEW="$((MAJOR + 1)).0.0" ;;
+            minor) NEW="${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEW="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            build) NEW="${SEMVER}" ;;
+            *)
+              echo "::error::Invalid bump_type: ${BUMP_TYPE}"
+              exit 1
+              ;;
+          esac
+          echo "seed=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "Seed semver: ${NEW}"
+
+      - name: Squash develop into main (working tree)
+        run: git merge --squash origin/develop
+
+      - name: Run bump_command
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          SEED_VERSION: ${{ steps.seed.outputs.seed }}
+          BUMP_CMD: ${{ inputs.bump_command }}
+        run: |
+          eval "${BUMP_CMD}"
+
+      - name: Read new version (post-bump)
+        id: read-new
+        env:
+          READ_CMD: ${{ inputs.read_version_command }}
+        run: |
+          NEW=$(eval "${READ_CMD}")
+          if [ -z "$NEW" ]; then
+            echo "::error::read_version_command returned empty after bump."
+            exit 1
+          fi
+          echo "version=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "New version: ${NEW}"
+
+      - name: Pre-validate (tag does not exist)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_VERSION: ${{ steps.read-new.outputs.version }}
+          REPO_SLUG: ${{ inputs.repo_slug }}
+        run: |
+          if gh api "repos/${REPO_SLUG}/git/refs/tags/${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag ${NEW_VERSION} already exists."
+            exit 1
+          fi
+
+      - name: Run repo validation
+        env:
+          VERSION: ${{ steps.read-new.outputs.version }}
+          VALIDATE_COMMAND: ${{ inputs.validate_command }}
+        run: |
+          eval "${VALIDATE_COMMAND}"
+
+      - name: Generate release notes from squashed commits
+        id: notes
+        env:
+          SQUASH_BOUNDARY: ${{ steps.boundary.outputs.sha }}
+        run: |
+          BODY=$(git log --pretty='format:- %s' "main..${SQUASH_BOUNDARY}")
+          if [ -z "$BODY" ]; then
+            BODY="- (no commits found)"
+          fi
+          {
+            echo "body<<EOF_NOTES"
+            echo "$BODY"
+            echo "EOF_NOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Commit + push squash to main
+        id: push
+        env:
+          NEW_VERSION: ${{ steps.read-new.outputs.version }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.body }}
+        run: |
+          git add -A
+          git commit -m "Release ${NEW_VERSION}" -m "${RELEASE_NOTES}"
+          git push origin main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create + push tag
+        id: tag
+        if: ${{ inputs.tag_in_prereq }}
+        env:
+          NEW_VERSION: ${{ steps.read-new.outputs.version }}
+        run: |
+          git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
+          git push origin "${NEW_VERSION}"
+          echo "tag_name=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
