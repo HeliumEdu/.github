@@ -278,14 +278,99 @@ jobs:
             echo "EOF_NOTES"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Commit + push squash to main
+      - name: Commit squash to main (signed via createCommitOnBranch)
         id: push
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NEW_VERSION: ${{ steps.read-new.outputs.version }}
           RELEASE_NOTES: ${{ steps.notes.outputs.body }}
+          REPO_SLUG: ${{ inputs.repo_slug }}
         run: |
+          set -euo pipefail
+
+          # Materialize working-tree mutations into the index so diff captures everything.
           git add -A
-          git commit -m "Release ${NEW_VERSION}" -m "${RELEASE_NOTES}"
-          git push origin main
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          # expectedHeadOid is local main HEAD — same SHA the runner checked out at job start.
+          # If origin/main moved since, GraphQL rejects with mismatch (concurrency guard).
+          EXPECTED_HEAD=$(git rev-parse HEAD)
+
+          ADDITIONS='[]'
+          DELETIONS='[]'
+
+          while IFS=$'\t' read -r STATUS_RAW PATH_A PATH_B; do
+            [ -z "${STATUS_RAW:-}" ] && continue
+            STATUS="${STATUS_RAW:0:1}"
+            case "$STATUS" in
+              A|M|T|C)
+                B64=$(base64 -w 0 < "$PATH_A")
+                ADDITIONS=$(jq --arg p "$PATH_A" --arg c "$B64" '. + [{path: $p, contents: $c}]' <<< "$ADDITIONS")
+                ;;
+              R)
+                DELETIONS=$(jq --arg p "$PATH_A" '. + [{path: $p}]' <<< "$DELETIONS")
+                B64=$(base64 -w 0 < "$PATH_B")
+                ADDITIONS=$(jq --arg p "$PATH_B" --arg c "$B64" '. + [{path: $p, contents: $c}]' <<< "$ADDITIONS")
+                ;;
+              D)
+                DELETIONS=$(jq --arg p "$PATH_A" '. + [{path: $p}]' <<< "$DELETIONS")
+                ;;
+              *)
+                echo "::warning::Unknown diff status '${STATUS_RAW}' for ${PATH_A}"
+                ;;
+            esac
+          done < <(git diff --name-status --cached "${EXPECTED_HEAD}")
+
+          A_COUNT=$(jq 'length' <<< "$ADDITIONS")
+          D_COUNT=$(jq 'length' <<< "$DELETIONS")
+          if [ "$A_COUNT" -eq 0 ] && [ "$D_COUNT" -eq 0 ]; then
+            echo "::error::No file changes between local working tree and main HEAD; nothing to commit."
+            exit 1
+          fi
+          echo "Committing ${A_COUNT} additions / ${D_COUNT} deletions to main"
+
+          QUERY='mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }'
+
+          PAYLOAD=$(jq -n \
+            --arg q "$QUERY" \
+            --arg repo "$REPO_SLUG" \
+            --arg head "$EXPECTED_HEAD" \
+            --arg headline "Release ${NEW_VERSION}" \
+            --arg body "$RELEASE_NOTES" \
+            --argjson additions "$ADDITIONS" \
+            --argjson deletions "$DELETIONS" \
+            '{
+              query: $q,
+              variables: {
+                input: {
+                  branch: { repositoryNameWithOwner: $repo, branchName: "main" },
+                  expectedHeadOid: $head,
+                  message: { headline: $headline, body: $body },
+                  fileChanges: { additions: $additions, deletions: $deletions }
+                }
+              }
+            }')
+
+          RESPONSE=$(echo "$PAYLOAD" | gh api graphql --input -)
+
+          SHA=$(jq -r '.data.createCommitOnBranch.commit.oid // empty' <<< "$RESPONSE")
+          if [ -z "$SHA" ]; then
+            echo "::error::createCommitOnBranch failed:"
+            jq . <<< "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Created signed commit ${SHA} on main"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Add release to job summary
+        env:
+          NEW_VERSION: ${{ steps.read-new.outputs.version }}
+          SHA: ${{ steps.push.outputs.sha }}
+          REPO_SLUG: ${{ inputs.repo_slug }}
+        run: |
+          {
+            echo "## Release \`${NEW_VERSION}\`"
+            echo ""
+            echo "Squash commit: [\`${SHA:0:7}\`](https://github.com/${REPO_SLUG}/commit/${SHA})"
+          } >> "$GITHUB_STEP_SUMMARY"
 
