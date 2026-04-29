@@ -7,12 +7,12 @@ on:
         description: "build, patch, minor, or major (build is Flutter-only)"
         required: true
         type: string
-      bump_command:
-        description: "Shell command that bumps the version [BUMP_TYPE, SEED_VERSION]."
+      version_format:
+        description: "Format of the version file: 'python' (__version__ = \"X.Y.Z\") or 'pubspec' (version: X.Y.Z+B)."
         required: true
         type: string
-      read_version_command:
-        description: "Shell command that prints the current version to stdout."
+      version_file:
+        description: "Path to the file containing the version."
         required: true
         type: string
       repo_slug:
@@ -95,9 +95,26 @@ jobs:
       - name: Read current version
         id: read-current
         env:
-          READ_CMD: ${{ inputs.read_version_command }}
+          VERSION_FORMAT: ${{ inputs.version_format }}
+          VERSION_FILE: ${{ inputs.version_file }}
         run: |
-          CURRENT=$(eval "${READ_CMD}")
+          set -euo pipefail
+          case "$VERSION_FORMAT" in
+            python)
+              CURRENT=$(grep '^__version__ = ' "$VERSION_FILE" | sed 's/__version__ = "\(.*\)"/\1/')
+              ;;
+            pubspec)
+              CURRENT=$(grep '^version:' "$VERSION_FILE" | sed 's/version: //; s/[[:space:]]//g')
+              ;;
+            *)
+              echo "::error::Unknown version_format: ${VERSION_FORMAT}"
+              exit 1
+              ;;
+          esac
+          if [ -z "$CURRENT" ]; then
+            echo "::error::Could not read version from ${VERSION_FILE}"
+            exit 1
+          fi
           echo "version=${CURRENT}" >> "$GITHUB_OUTPUT"
           echo "Current version: ${CURRENT}"
 
@@ -125,22 +142,54 @@ jobs:
       - name: Squash develop into main
         run: git merge --squash origin/develop
 
-      - name: Run bump_command
+      - name: Bump version
         env:
-          BUMP_TYPE: ${{ inputs.bump_type }}
+          VERSION_FORMAT: ${{ inputs.version_format }}
+          VERSION_FILE: ${{ inputs.version_file }}
           SEED_VERSION: ${{ steps.seed.outputs.seed }}
-          BUMP_CMD: ${{ inputs.bump_command }}
         run: |
-          eval "${BUMP_CMD}"
+          set -euo pipefail
+          case "$VERSION_FORMAT" in
+            python)
+              sed -i "s/^__version__ = \".*\"/__version__ = \"${SEED_VERSION}\"/" "$VERSION_FILE"
+              ;;
+            pubspec)
+              CURRENT=$(grep '^version:' "$VERSION_FILE" | sed 's/version: //; s/[[:space:]]//g')
+              CURRENT_BUILD="${CURRENT##*+}"
+              if [ "$CURRENT_BUILD" = "$CURRENT" ]; then
+                CURRENT_BUILD=0
+              fi
+              NEW_BUILD=$((CURRENT_BUILD + 1))
+              NEW_VERSION="${SEED_VERSION}+${NEW_BUILD}"
+              sed -i "s/^version: .*/version: ${NEW_VERSION}/" "$VERSION_FILE"
+              ;;
+            *)
+              echo "::error::Unknown version_format: ${VERSION_FORMAT}"
+              exit 1
+              ;;
+          esac
 
       - name: Read new version
         id: read-new
         env:
-          READ_CMD: ${{ inputs.read_version_command }}
+          VERSION_FORMAT: ${{ inputs.version_format }}
+          VERSION_FILE: ${{ inputs.version_file }}
         run: |
-          NEW=$(eval "${READ_CMD}")
+          set -euo pipefail
+          case "$VERSION_FORMAT" in
+            python)
+              NEW=$(grep '^__version__ = ' "$VERSION_FILE" | sed 's/__version__ = "\(.*\)"/\1/')
+              ;;
+            pubspec)
+              NEW=$(grep '^version:' "$VERSION_FILE" | sed 's/version: //; s/[[:space:]]//g')
+              ;;
+            *)
+              echo "::error::Unknown version_format: ${VERSION_FORMAT}"
+              exit 1
+              ;;
+          esac
           if [ -z "$NEW" ]; then
-            echo "::error::read_version_command returned empty after bump."
+            echo "::error::Failed to read new version from ${VERSION_FILE} after bump."
             exit 1
           fi
           echo "version=${NEW}" >> "$GITHUB_OUTPUT"
