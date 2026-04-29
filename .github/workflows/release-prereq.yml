@@ -24,11 +24,11 @@ on:
         required: false
         type: string
         default: 'make validate-release VERSION=${VERSION}'
-      tag_in_prereq:
-        description: "Tag in pre-req? Set true only for repos that don't tag after build."
+      ci_timeout_minutes:
+        description: "Max minutes to wait for develop CI to finish before aborting"
         required: false
-        type: boolean
-        default: false
+        type: number
+        default: 30
     secrets:
       bot_app_id:
         required: true
@@ -43,8 +43,6 @@ on:
         value: ${{ jobs.prereq.outputs.squash_boundary }}
       release_notes:
         value: ${{ jobs.prereq.outputs.release_notes }}
-      tag_name:
-        value: ${{ jobs.prereq.outputs.tag_name }}
 
 permissions:
   contents: write
@@ -62,7 +60,6 @@ jobs:
       squash_commit_sha: ${{ steps.push.outputs.sha }}
       squash_boundary: ${{ steps.boundary.outputs.sha }}
       release_notes: ${{ steps.notes.outputs.body }}
-      tag_name: ${{ steps.tag.outputs.tag_name }}
 
     steps:
       - name: Generate GitHub App token
@@ -110,21 +107,6 @@ jobs:
             exit 1
           fi
           echo "develop is ${AHEAD} commits ahead of main"
-
-      - name: Pre-validate (CI green on develop HEAD)
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
-          REPO_SLUG: ${{ inputs.repo_slug }}
-        run: |
-          NON_PASSING=$(gh api "repos/${REPO_SLUG}/commits/${DEVELOP_SHA}/check-runs" --paginate \
-            --jq '[.check_runs[] | select((.conclusion // "pending") | IN("success", "skipped", "neutral") | not) | "\(.name): \(.conclusion // "pending")"] | unique')
-          if [ "$NON_PASSING" != "[]" ]; then
-            echo "::error::CI on develop HEAD is not green:"
-            echo "$NON_PASSING" | jq -r '.[]'
-            exit 1
-          fi
-          echo "All CI checks passing on develop HEAD"
 
       - name: Read current version (pre-bump)
         id: read-current
@@ -198,6 +180,48 @@ jobs:
         run: |
           eval "${VALIDATE_COMMAND}"
 
+      - name: Wait for CI to finish on develop HEAD (success-only, with timeout)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
+          REPO_SLUG: ${{ inputs.repo_slug }}
+          CI_TIMEOUT_MINUTES: ${{ inputs.ci_timeout_minutes }}
+        run: |
+          set -euo pipefail
+          DEADLINE=$(( $(date +%s) + CI_TIMEOUT_MINUTES * 60 ))
+          POLL_INTERVAL=30
+
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            RUNS=$(gh api "repos/${REPO_SLUG}/commits/${DEVELOP_SHA}/check-runs" --paginate --jq '.check_runs')
+            RUN_COUNT=$(echo "$RUNS" | jq 'length')
+            NON_SUCCESS=$(echo "$RUNS" | jq '[.[] | select(.status == "completed" and .conclusion != "success")]')
+            NON_SUCCESS_COUNT=$(echo "$NON_SUCCESS" | jq 'length')
+            PENDING_COUNT=$(echo "$RUNS" | jq '[.[] | select(.status != "completed")] | length')
+
+            if [ "$NON_SUCCESS_COUNT" -gt 0 ]; then
+              echo "::error::CI on develop HEAD has non-success checks (only 'success' is acceptable):"
+              echo "$NON_SUCCESS" | jq -r '.[] | "  - \(.name): \(.conclusion)"'
+              exit 1
+            fi
+
+            if [ "$RUN_COUNT" -gt 0 ] && [ "$PENDING_COUNT" -eq 0 ]; then
+              echo "All CI checks succeeded on develop HEAD ($RUN_COUNT runs)"
+              exit 0
+            fi
+
+            REMAINING=$(( DEADLINE - $(date +%s) ))
+            if [ "$RUN_COUNT" -eq 0 ]; then
+              echo "No CI runs registered yet for $DEVELOP_SHA, waiting (${REMAINING}s remaining)..."
+            else
+              echo "$PENDING_COUNT/$RUN_COUNT checks still running, waiting (${REMAINING}s remaining)..."
+            fi
+
+            sleep $POLL_INTERVAL
+          done
+
+          echo "::error::Timed out waiting for CI on develop HEAD after ${CI_TIMEOUT_MINUTES} minutes"
+          exit 1
+
       - name: Generate release notes from squashed commits
         id: notes
         env:
@@ -224,12 +248,3 @@ jobs:
           git push origin main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Create + push tag
-        id: tag
-        if: ${{ inputs.tag_in_prereq }}
-        env:
-          NEW_VERSION: ${{ steps.read-new.outputs.version }}
-        run: |
-          git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
-          git push origin "${NEW_VERSION}"
-          echo "tag_name=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
