@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   cleanup:
@@ -48,6 +49,9 @@ jobs:
           git config user.email "${USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
       - name: Merge main into develop
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -59,17 +63,47 @@ jobs:
             exit 0
           fi
 
-          if ! git merge --no-ff -m "Merge main into develop" origin/main; then
-            echo "::error::Merge conflict while merging main into develop. Resolve manually:"
-            echo "  git fetch origin main develop"
-            echo "  git checkout develop && git pull"
-            echo "  git merge main  # resolve conflicts"
-            echo "  git push origin develop"
-            git merge --abort || true
-            exit 1
+          if git merge --no-ff -m "Merge main into develop" origin/main; then
+            git push origin develop
+            echo "Merged main into develop ($(git rev-parse --short HEAD))"
+            exit 0
           fi
 
-          # Normal push (no force). If develop moved during cleanup, this fails;
-          # re-running the cleanup job picks up the new state and tries again.
-          git push origin develop
-          echo "Merged main into develop ($(git rev-parse --short HEAD))"
+          # Conflict path: open a PR so the conflicts can be resolved in GitHub's web UI.
+          git merge --abort || true
+
+          MAIN_SHA=$(git rev-parse origin/main)
+          SHORT_SHA="${MAIN_SHA:0:7}"
+          BRANCH="cleanup/merge-main-${SHORT_SHA}"
+
+          # Snapshot main's tip onto a stable cleanup branch as the PR head.
+          git push --force-with-lease origin "${MAIN_SHA}:refs/heads/${BRANCH}"
+
+          EXISTING=$(gh pr list --repo "${REPO}" --head "${BRANCH}" --base develop \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "::warning::Cleanup conflict; PR #${EXISTING} already open for ${BRANCH}"
+            exit 0
+          fi
+
+          gh pr create \
+            --repo "${REPO}" \
+            --base develop \
+            --head "${BRANCH}" \
+            --title "Resolve merge conflict: main into develop (${SHORT_SHA})" \
+            --body "$(cat <<EOF
+          The release-cleanup workflow could not auto-merge \`main\` into \`develop\` after the latest release.
+
+          - Conflicting head on main: \`${MAIN_SHA}\`
+          - Use GitHub's **Resolve conflicts** button on this PR to fix in-browser, then merge with **Create a merge commit** (not squash).
+          - Or locally:
+            \`\`\`
+            git fetch origin main develop
+            git checkout develop && git pull
+            git merge main   # resolve conflicts
+            git push origin develop
+            \`\`\`
+          EOF
+          )"
+
+          echo "::warning::Cleanup conflict; opened PR for manual resolution"
