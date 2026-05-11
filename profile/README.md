@@ -1,4 +1,8 @@
-<p align="center"><img src="https://www.heliumedu.com/assets/img/logo_full_blue.png" /></p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HeliumEdu/www/main/src/assets/images/helium-logo.png" alt="Helium" width="300" />
+  <br />
+  <img src="https://raw.githubusercontent.com/HeliumEdu/www/main/public/og-default.png" alt="Helium - Student Planner" width="800" />
+</p>
 
 Hello 👋, and welcome! This organization owns the source code for [Helium Edu](https://www.heliumedu.com), including [Helium – Student Planner's deployment infastructure](https://github.com/heliumedu/infra) and [apps](https://github.com/HeliumEdu/frontend).
 
