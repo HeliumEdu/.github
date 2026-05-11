@@ -35,7 +35,6 @@ permissions:
 
 concurrency:
   group: release-${{ github.repository }}
-  cancel-in-progress: false
 
 jobs:
   prereq:
