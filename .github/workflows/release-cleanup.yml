@@ -51,6 +51,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
 
@@ -89,6 +90,7 @@ jobs:
             --repo "${REPO}" \
             --base develop \
             --head "${BRANCH}" \
+            --assignee "${ACTOR}" \
             --title "Resolve merge conflict: main into develop (${SHORT_SHA})" \
             --body "$(cat <<EOF
           The release-cleanup workflow could not auto-merge \`main\` into \`develop\` after the latest release.
