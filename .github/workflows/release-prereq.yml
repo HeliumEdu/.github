@@ -210,7 +210,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           DEVELOP_SHA: ${{ steps.boundary.outputs.sha }}
           REPO_SLUG: ${{ inputs.repo_slug }}
-          CI_TIMEOUT_MINUTES: 30
+          CI_TIMEOUT_MINUTES: 60
         run: |
           set -euo pipefail
           DEADLINE=$(( $(date +%s) + CI_TIMEOUT_MINUTES * 60 ))
