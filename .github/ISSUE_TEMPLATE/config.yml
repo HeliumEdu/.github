@@ -1,1 +1,7 @@
 blank_issues_enabled: false
+
+contact_links:
+  - name: 🆘 Helium Support (start here)
+    # TODO: replace with the live JSM customer portal URL once the service desk is configured.
+    url: https://heliumedu.atlassian.net/servicedesk/customer/portals
+    about: Bug reports, feature ideas, account questions, how-to help — file here, no GitHub account needed. The templates on this page are structured for developers working with Helium's code.

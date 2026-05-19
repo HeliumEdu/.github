@@ -1,5 +1,5 @@
 name: 🐛 Bug Report
-description: Found a bug? Help us squash it.
+description: Found a bug in Helium's code? Help us squash it.
 labels: ["bug"]
 
 body:
@@ -7,9 +7,11 @@ body:
 - type: markdown
   attributes:
     value: |
-      Please be aware that Helium is free and is not under active development. Though [supporting the project financially](https://github.com/sponsors/alexdlaird) is appreciated ❤️ (since Helium has operating costs, even though it is free to use), we make no guarantees bug reports will be looked at or considered.
+      ## 🛑 First — are you an end user?
 
-      Though this project is not under active development, we are still happy to review pull requests submitted by the community to resolve bugs, so submitting a report of your experience may still be helpful to us and others.
+      If you're not sure what "this repository" means, file in [Helium Support](https://heliumedu.atlassian.net/servicedesk/customer/portals) instead — no GitHub account needed. This template is structured for developer-style bug reports (repro steps, environment, etc.).
+
+      Helium is a passion project — free for everyone, made possible by [supporters like you](https://patreon.com/HeliumEdu) ❤️. Small team, so we triage by impact and act as time allows. PRs resolving bugs especially welcome.
 
 - type: checkboxes
   id: ack
@@ -20,39 +22,55 @@ body:
       required: true
     - label: I have searched [Issues](issues?q=is%3Aissue) to see if the bug has already been reported
       required: true
+    - label: I have confirmed this is a code bug in this specific repository (not a how-to question, account issue, or general support request — those belong in [Helium Support](https://heliumedu.atlassian.net/servicedesk/customer/portals))
+      required: true
+
+- type: dropdown
+  id: platform
+  attributes:
+    label: Platform
+    description: Where are you experiencing this bug?
+    options:
+      - iOS
+      - Android
+      - Web (app)
+      - Backend / API
+      - Marketing site (www)
+      - Infra / deploy
+      - Other
+  validations:
+    required: true
+
+- type: input
+  id: helium-version
+  attributes:
+    label: Helium Version
+    description: From the app's Settings / About screen, or the `X-Helium-Version` API response header. Skip for `www` / `infra` bugs (reference a commit SHA in the description instead).
+    placeholder: 3.5.27
 
 - type: input
   id: os-version
   attributes:
-    label: Operating System
-    placeholder: macOS 10.14.5
-  validations:
-    required: true
-
-- type: input
-  id: browser-version
-  attributes:
-    label: Browser & Version
-    placeholder: Chrome 122.0.6261.57
-  validations:
-    required: true
-
-- type: input
-  id: username
-  attributes:
-    label: Helium Username
-    placeholder: contact@alexlaird.com
-  validations:
-    required: true
+    label: Operating System / Browser
+    description: Skip for `Backend / API` or `Infra` bugs where it isn't relevant.
+    placeholder: iOS 18.2, Android 15, macOS 15.1, Chrome 130 on Windows 11
 
 - type: textarea
   id: describe-the-bug
   attributes:
     label: Describe the Bug
     description: |
-      A clear and concise description of what the bug is and the steps you took that caused it.
+      A clear and concise description of what the bug is, including any errors thrown or unexpected behavior.
 
-      Please note that we need details to troubleshoot. "Creating an assignment didn't work" is not a helpful description of an error and will likely just be closed. What was the name of the assignment? Course Group? Did it have Categories? Whatever the issue, we need contextual details surrounding it to be able to troubleshoot the issue.
+      "Creating an assignment didn't work" is not a useful description and will likely be closed. We need contextual details: what was the assignment name, the course group, the categories? Whatever the bug, we need the surrounding context to troubleshoot.
+  validations:
+    required: true
+
+- type: textarea
+  id: steps-to-reproduce
+  attributes:
+    label: Steps to Reproduce
+    description: Numbered steps so we can reliably trigger the bug ourselves.
   validations:
     required: true
 
@@ -61,9 +79,9 @@ body:
   attributes:
     label: Expected Behavior
     description: A brief description of what you expected to happen.
-    
+
 - type: textarea
   id: console-output
   attributes:
     label: Console Output / Error Responses
-    description: If you're a superuser, please provide any stacktraces or responses from failed requests in the browser's debugger console.
+    description: If you have access to logs, stacktraces, or failed API responses (e.g. from the browser debugger or device logs), paste them here.

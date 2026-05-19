@@ -1,3 +1,7 @@
+Helium is a passion project — free for everyone, made possible by [supporters like you](https://patreon.com/HeliumEdu) ❤️. Thanks for contributing!
+
+---
+
 ### Description
 A clear and concise description of what was changed.
 
