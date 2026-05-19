@@ -9,7 +9,7 @@ body:
     value: |
       ## 🛑 First — are you an end user?
 
-      If you're not sure what "this repository" means, file in [Helium Support](https://heliumedu.atlassian.net/servicedesk/customer/portals) instead — no GitHub account needed. This template is structured for developer-style bug reports (repro steps, environment, etc.).
+      If you're not sure what "this repository" means, file in [Helium Support](https://heliumedu.atlassian.net/helpcenter/HS/contact-us) instead — no GitHub account needed. This template is structured for developer-style bug reports (repro steps, environment, etc.).
 
       Helium is a passion project — free for everyone, made possible by [supporters like you](https://patreon.com/HeliumEdu) ❤️. Small team, so we triage by impact and act as time allows. PRs resolving bugs especially welcome.
 
@@ -22,7 +22,7 @@ body:
       required: true
     - label: I have searched [Issues](issues?q=is%3Aissue) to see if the bug has already been reported
       required: true
-    - label: I have confirmed this is a code bug in this specific repository (not a how-to question, account issue, or general support request — those belong in [Helium Support](https://heliumedu.atlassian.net/servicedesk/customer/portals))
+    - label: I have confirmed this is a code bug in this specific repository (not a how-to question, account issue, or general support request — those belong in [Helium Support](https://heliumedu.atlassian.net/helpcenter/HS/contact-us))
       required: true
 
 - type: dropdown
