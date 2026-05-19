@@ -10,4 +10,4 @@ While the development, maintenance, and direction of Helium is a group effort, I
 
 ➡ If you'd like to donate to this work ❤️, you can do so through [Patreon 🙌🏻](https://www.patreon.com/alexdlaird/membership) or [PayPal 👏🏻](https://www.paypal.com/paypalme/alexdlaird)—it costs money to keep the lights on, and your support helps keep Helium free for everyone.\
 ➡ If you're building an integration, check out our [API docs](https://api.heliumedu.com/docs).\
-➡ If you need assistance with the Helium, [check out support](https://support.heliumedu.com/).
+➡ If you need assistance with the Helium, [check out support](https://www.heliumedu.com/support).
