@@ -11,7 +11,7 @@ body:
 
       If you're not sure what "this repository" means, file in [Helium Support](https://heliumedu.atlassian.net/helpcenter/HS/contact-us) instead — no GitHub account needed. This template is for developers proposing specific code or docs changes.
 
-      Helium is a passion project — free for everyone, made possible by [supporters like you](https://patreon.com/HeliumEdu) ❤️. Small team, so we triage by impact and act as time allows. PRs implementing features especially welcome.
+      Helium is a passion project — free for everyone, made possible by [supporters like you](https://www.patreon.com/alexdlaird/membership) ❤️. Small team, so we triage by impact and act as time allows. PRs implementing features especially welcome.
 
 - type: checkboxes
   id: ack

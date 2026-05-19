@@ -1,4 +1,4 @@
-Helium is a passion project — free for everyone, made possible by [supporters like you](https://patreon.com/HeliumEdu) ❤️. Thanks for contributing!
+Helium is a passion project — free for everyone, made possible by [supporters like you](https://www.patreon.com/alexdlaird/membership) ❤️. Thanks for contributing!
 
 ---
 
