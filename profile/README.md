@@ -20,7 +20,7 @@
 
 ---
 
-Hello 👋, and welcome! This organization owns the source code for Helium - Student Planner, including its [deployment infrastructure](https://github.com/HeliumEdu/infra), [apps](https://github.com/HeliumEdu/frontend), [backend](https://github.com/HeliumEdu/platform), and [marketing site](https://github.com/HeliumEdu/www).
+Source code for Helium - Student Planner is organized across [deployment infrastructure](https://github.com/HeliumEdu/infra), [apps](https://github.com/HeliumEdu/frontend), [backend](https://github.com/HeliumEdu/platform), and [marketing site](https://github.com/HeliumEdu/www).
 
 While the development, maintenance, and direction of Helium is a group effort, I ([Alex Laird](https://github.com/alexdlaird)) am the one primarily writing the code, designing the features, and making sure everything feels polished and reliable.
 
