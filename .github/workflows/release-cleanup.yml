@@ -69,27 +69,7 @@ jobs:
             exit 0
           fi
 
-          # Check if only version files conflict (bump-develop overwrites these immediately after).
-          CONFLICTING=$(git diff --name-only --diff-filter=U)
-          VERSION_ONLY=true
-          while IFS= read -r file; do
-            case "$file" in
-              pubspec.yaml|package.json|version.txt) ;;
-              *) VERSION_ONLY=false; break ;;
-            esac
-          done <<< "$CONFLICTING"
-
-          if [ "$VERSION_ONLY" = true ]; then
-            echo "Only version file conflicts detected — auto-resolving in favor of develop"
-            echo "$CONFLICTING" | xargs git checkout --ours --
-            git add $CONFLICTING
-            git commit --no-edit
-            git push origin develop
-            echo "Merged main into develop with auto-resolved version conflicts ($(git rev-parse --short HEAD))"
-            exit 0
-          fi
-
-          # Non-trivial conflict path: open a PR so the conflicts can be resolved in GitHub's web UI.
+          # Conflict path: open a PR so the conflicts can be resolved in GitHub's web UI.
           git merge --abort || true
 
           MAIN_SHA=$(git rev-parse origin/main)
