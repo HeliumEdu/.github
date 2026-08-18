@@ -1,0 +1,42 @@
+name: Re-home Dependabot PR
+
+# GitHub withholds all repo/org secrets from pull_request runs triggered by
+# dependabot[bot], so integration tests can never pass on a Dependabot PR as
+# opened. Called via pull_request_target (never checks out PR code, so it's
+# safe even though the head branch is untrusted) from a caller repo, this
+# updates the PR branch using heliumbot's GitHub App token, which produces a
+# new synchronize event whose actor is heliumedu-bot[bot] instead of
+# dependabot[bot] — unlocking secrets for the caller's normal build workflow,
+# the same way it already works for Renovate.
+
+on:
+  workflow_call:
+    secrets:
+      bot_app_id:
+        required: true
+      bot_private_key:
+        required: true
+
+permissions: {}
+
+jobs:
+  rehome:
+    name: Re-home Dependabot Branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.bot_app_id }}
+          private-key: ${{ secrets.bot_private_key }}
+          skip-token-revoke: true
+
+      - name: Update branch as heliumedu-bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api -X PUT \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/update-branch" \
+            || echo "Nothing to update - branch already current with base."
