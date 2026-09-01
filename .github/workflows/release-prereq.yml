@@ -29,6 +29,9 @@ on:
         value: ${{ jobs.prereq.outputs.version }}
       squash_commit_sha:
         value: ${{ jobs.prereq.outputs.squash_commit_sha }}
+      squash_boundary_sha:
+        description: "The develop SHA that was squashed into main."
+        value: ${{ jobs.prereq.outputs.squash_boundary_sha }}
 
 permissions:
   contents: write
@@ -43,6 +46,7 @@ jobs:
     outputs:
       version: ${{ steps.read-new.outputs.version }}
       squash_commit_sha: ${{ steps.push.outputs.sha }}
+      squash_boundary_sha: ${{ steps.boundary.outputs.sha }}
 
     steps:
       - name: Generate GitHub App token

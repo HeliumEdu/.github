@@ -1,7 +1,18 @@
-name: Release Cleanup (Merge main into develop)
+name: Release Cleanup (Sync develop with main)
 
 on:
   workflow_call:
+    inputs:
+      consolidate_history:
+        description: "Reset develop to main after release (force-push)."
+        required: false
+        type: boolean
+        default: false
+      squash_boundary_sha:
+        description: "The develop SHA that was squashed into main. Required when consolidate_history is true."
+        required: false
+        type: string
+        default: ""
     secrets:
       bot_app_id:
         required: true
@@ -13,7 +24,7 @@ permissions:
 
 jobs:
   cleanup:
-    name: Merge main into develop
+    name: Sync develop with main
     runs-on: ubuntu-latest
 
     steps:
@@ -47,7 +58,49 @@ jobs:
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
+      - name: Consolidate develop onto main
+        id: consolidate
+        if: ${{ inputs.consolidate_history }}
+        env:
+          BOUNDARY: ${{ inputs.squash_boundary_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main develop
+
+          if [ -z "$BOUNDARY" ]; then
+            echo "::warning::consolidate_history is set but squash_boundary_sha is empty; merging instead"
+            exit 0
+          fi
+
+          DEVELOP_SHA=$(git rev-parse origin/develop)
+          if [ "$DEVELOP_SHA" != "$BOUNDARY" ]; then
+            echo "::warning::develop advanced during the release (${DEVELOP_SHA:0:7} != ${BOUNDARY:0:7}); merging instead"
+            exit 0
+          fi
+
+          MAIN_SHA=$(git rev-parse origin/main)
+
+          # The lease makes this atomic. If develop advances between the check above
+          # and the push, the push is rejected rather than discarding those commits.
+          if git push --force-with-lease=refs/heads/develop:"$BOUNDARY" \
+              origin "${MAIN_SHA}:refs/heads/develop"; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "Reset develop to main (${MAIN_SHA:0:7})"
+            {
+              echo "### History consolidated"
+              echo ""
+              echo "\`develop\` was reset to \`main\` (\`${MAIN_SHA:0:7}\`)."
+              echo ""
+              echo "Local clones need \`git reset --hard origin/develop\`. A \`git pull\`"
+              echo "re-merges the replaced history and reverts the consolidation."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Force-push was rejected; merging instead"
+          fi
+
       - name: Merge main into develop
+        if: ${{ steps.consolidate.outputs.done != 'true' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
