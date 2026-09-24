@@ -1,0 +1,43 @@
+name: 'Datadog Metric'
+description: 'Submit a gauge value to Datadog.'
+
+inputs:
+  api-key:
+    description: 'Datadog API key'
+    required: true
+  metric:
+    description: 'Metric name (e.g. "helium.alb.dns_drift")'
+    required: true
+  value:
+    description: 'Numeric value to submit'
+    required: true
+  tags:
+    description: 'Comma-separated tags (e.g. "env:prod,kind:orphaned")'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Submit metric
+      shell: bash
+      env:
+        DD_API_KEY: ${{ inputs.api-key }}
+        METRIC: ${{ inputs.metric }}
+        VALUE: ${{ inputs.value }}
+        TAGS: ${{ inputs.tags }}
+      run: |
+        curl -sS -X POST "https://api.datadoghq.com/api/v2/series" \
+          -H "Accept: application/json" \
+          -H "Content-Type: application/json" \
+          -H "DD-API-KEY: ${DD_API_KEY}" \
+          -d "$(jq -n --arg metric "$METRIC" --argjson value "$VALUE" --arg tags "$TAGS" --arg ts "$(date +%s)" '
+            {
+              series: [{
+                metric: $metric,
+                type: 3,
+                points: [{ timestamp: ($ts | tonumber), value: $value }],
+                tags: ($tags | split(",") | map(select(length > 0)))
+              }]
+            }')" \
+          --fail-with-body
