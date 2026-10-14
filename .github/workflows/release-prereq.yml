@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.read-new.outputs.version }}
-      squash_commit_sha: ${{ steps.push.outputs.sha }}
+      squash_commit_sha: ${{ steps.push.outputs.commit }}
       squash_boundary_sha: ${{ steps.boundary.outputs.sha }}
 
     steps:
@@ -307,109 +307,24 @@ jobs:
             echo "EOF_NOTES"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Commit squash to main (signed via createCommitOnBranch)
+      - name: Commit squash to main (signed, keeping file modes)
         id: push
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          NEW_VERSION: ${{ steps.read-new.outputs.version }}
-          RELEASE_NOTES: ${{ steps.notes.outputs.body }}
-          REPO_SLUG: ${{ inputs.repo_slug }}
-        run: |
-          set -euo pipefail
+        uses: IAreKyleW00t/verified-bot-commit@v2.3.5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: ${{ inputs.repo_slug }}
+          ref: main
+          files: '**'
+          if-no-commit: error
+          message: |
+            Release ${{ steps.read-new.outputs.version }}
 
-          # Materialize working-tree mutations into the index so diff captures everything.
-          git add -A
-
-          # expectedHeadOid is local main HEAD — same SHA the runner checked out at job start.
-          # If origin/main moved since, GraphQL rejects with mismatch (concurrency guard).
-          EXPECTED_HEAD=$(git rev-parse HEAD)
-
-          # Accumulate additions/deletions on disk rather than in shell variables so neither
-          # a single file's base64 nor the aggregated payload can exceed MAX_ARG_STRLEN
-          # (~128 KiB per argv string on Linux) when invoking jq or gh.
-          ADD_FILE=$(mktemp); echo '[]' > "$ADD_FILE"
-          DEL_FILE=$(mktemp); echo '[]' > "$DEL_FILE"
-          NOTES_FILE=$(mktemp); printf '%s' "$RELEASE_NOTES" > "$NOTES_FILE"
-          PAYLOAD_FILE=$(mktemp)
-          trap 'rm -f "$ADD_FILE" "$DEL_FILE" "$NOTES_FILE" "$PAYLOAD_FILE"' EXIT
-
-          append_addition() {
-            local path="$1"
-            local b64_file tmp
-            b64_file=$(mktemp)
-            base64 -w 0 < "$path" > "$b64_file"
-            tmp=$(mktemp)
-            jq --arg p "$path" --rawfile c "$b64_file" \
-               '. + [{path: $p, contents: $c}]' "$ADD_FILE" > "$tmp"
-            mv "$tmp" "$ADD_FILE"
-            rm -f "$b64_file"
-          }
-
-          append_deletion() {
-            local path="$1"
-            local tmp
-            tmp=$(mktemp)
-            jq --arg p "$path" '. + [{path: $p}]' "$DEL_FILE" > "$tmp"
-            mv "$tmp" "$DEL_FILE"
-          }
-
-          while IFS=$'\t' read -r STATUS_RAW PATH_A PATH_B; do
-            [ -z "${STATUS_RAW:-}" ] && continue
-            STATUS="${STATUS_RAW:0:1}"
-            case "$STATUS" in
-              A|M|T|C) append_addition "$PATH_A" ;;
-              R)       append_deletion "$PATH_A"; append_addition "$PATH_B" ;;
-              D)       append_deletion "$PATH_A" ;;
-              *)       echo "::warning::Unknown diff status '${STATUS_RAW}' for ${PATH_A}" ;;
-            esac
-          done < <(git diff --name-status --cached "${EXPECTED_HEAD}")
-
-          A_COUNT=$(jq 'length' "$ADD_FILE")
-          D_COUNT=$(jq 'length' "$DEL_FILE")
-          if [ "$A_COUNT" -eq 0 ] && [ "$D_COUNT" -eq 0 ]; then
-            echo "::error::No file changes between local working tree and main HEAD; nothing to commit."
-            exit 1
-          fi
-          echo "Committing ${A_COUNT} additions / ${D_COUNT} deletions to main"
-
-          QUERY='mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }'
-
-          jq -n \
-            --arg q "$QUERY" \
-            --arg repo "$REPO_SLUG" \
-            --arg head "$EXPECTED_HEAD" \
-            --arg headline "Release ${NEW_VERSION}" \
-            --rawfile body "$NOTES_FILE" \
-            --slurpfile additions "$ADD_FILE" \
-            --slurpfile deletions "$DEL_FILE" \
-            '{
-              query: $q,
-              variables: {
-                input: {
-                  branch: { repositoryNameWithOwner: $repo, branchName: "main" },
-                  expectedHeadOid: $head,
-                  message: { headline: $headline, body: $body },
-                  fileChanges: { additions: $additions[0], deletions: $deletions[0] }
-                }
-              }
-            }' > "$PAYLOAD_FILE"
-
-          RESPONSE=$(gh api graphql --input "$PAYLOAD_FILE")
-
-          SHA=$(jq -r '.data.createCommitOnBranch.commit.oid // empty' <<< "$RESPONSE")
-          if [ -z "$SHA" ]; then
-            echo "::error::createCommitOnBranch failed:"
-            jq . <<< "$RESPONSE"
-            exit 1
-          fi
-
-          echo "Created signed commit ${SHA} on main"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+            ${{ steps.notes.outputs.body }}
 
       - name: Add release to job summary
         env:
           NEW_VERSION: ${{ steps.read-new.outputs.version }}
-          SHA: ${{ steps.push.outputs.sha }}
+          SHA: ${{ steps.push.outputs.commit }}
           REPO_SLUG: ${{ inputs.repo_slug }}
         run: |
           {

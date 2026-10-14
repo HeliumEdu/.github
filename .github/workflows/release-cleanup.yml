@@ -149,12 +149,14 @@ jobs:
           The release-cleanup workflow could not auto-merge \`main\` into \`develop\` after the latest release.
 
           - Conflicting head on main: \`${MAIN_SHA}\`
-          - Use GitHub's **Resolve conflicts** button on this PR to fix in-browser, then merge with **Create a merge commit** (not squash).
+          - Use GitHub's **Resolve conflicts** button on this PR to fix in-browser, then merge with **Create a merge commit** (not squash). Before merging, make \`CHANGELOG.md\` match \`main\`'s: git merges it without a conflict, but duplicates the released entries.
           - Or locally:
             \`\`\`
             git fetch origin main develop
             git checkout develop && git pull
-            git merge main   # resolve conflicts
+            git merge origin/main   # resolve conflicts
+            git checkout origin/main -- CHANGELOG.md
+            git commit --no-edit
             git push origin develop
             \`\`\`
           EOF
