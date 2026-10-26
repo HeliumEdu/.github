@@ -82,6 +82,16 @@ jobs:
       - name: Fetch develop
         run: git fetch origin develop
 
+      - name: Pre-validate main is merged into develop
+        run: |
+          # A release that stopped after pushing main (cancelled, or its cleanup failed) leaves main with commits
+          # develop doesn't have; squashing on top of them loses this release's changelog and version.
+          if ! git merge-base --is-ancestor main origin/develop; then
+            LAST=$(git log -1 --format='%h %s' main)
+            echo "::error::main has commits develop doesn't (last: ${LAST}). Merge main into develop first (keep develop's code and main's version and changelog), tag main's release commit if it has no tag, then re-run."
+            exit 1
+          fi
+
       - name: Record squash boundary
         id: boundary
         run: echo "sha=$(git rev-parse origin/develop)" >> "$GITHUB_OUTPUT"
