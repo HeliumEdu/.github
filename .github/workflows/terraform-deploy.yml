@@ -1,0 +1,136 @@
+name: Terraform Deploy (Bump a component's version in infra and apply it)
+
+# Commits the component's version variable to `terraform/environments/<environment>/variables.tf` in HeliumEdu/infra
+# (`[<component>] Deploy X.Y.Z to <environment>`), applies the matching Terraform Cloud run (discarding competing runs,
+# except the other release's, which that release applies), and waits until `status_url` reports the version. A re-run
+# with nothing to commit applies the run if it's still waiting. The caller verifies the release's artifacts first.
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: "The component being deployed, the deploy commit's prefix (platform, connector)"
+        required: true
+        type: string
+      version:
+        description: "The version to deploy"
+        required: true
+        type: string
+      environment:
+        description: "Environment (Terraform Cloud workspace) to deploy to"
+        required: true
+        type: string
+      version_variable:
+        description: "Terraform variable holding the component's version (helium_version, connector_version)"
+        required: true
+        type: string
+      status_url:
+        description: "URL that reports the live version as JSON `version`"
+        required: true
+        type: string
+      other_release_prefix:
+        description: "Deploy commit prefix of the other component's release, whose runs are never discarded"
+        required: true
+        type: string
+      tag_infra:
+        description: "Tag the infra repo with VERSION+RUN_NUMBER after a prod deploy"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      terraform_api_token:
+        required: true
+      helium_bot_app_id:
+        required: true
+      helium_bot_private_key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    env:
+      FORCE_COLOR: 1
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+      TERRAFORM_API_TOKEN: ${{ secrets.terraform_api_token }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      VERSION_NUMBER: ${{ inputs.version }}
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.helium_bot_app_id }}
+          private-key: ${{ secrets.helium_bot_private_key }}
+          owner: HeliumEdu
+          skip-token-revoke: true
+
+      - name: Checkout HeliumEdu/.github
+        uses: actions/checkout@v6
+        with:
+          repository: HeliumEdu/.github
+          path: dot-github
+
+      - name: Checkout infra repository
+        uses: actions/checkout@v6
+        with:
+          repository: HeliumEdu/infra
+          token: ${{ steps.app-token.outputs.token }}
+          path: deploy
+          fetch-depth: 0
+
+      - name: Set up Python "3.12"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Get GitHub App bot user ID
+        id: get-bot-user-id
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup git
+        run: |
+          git config --global user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config --global user.email "${{ steps.get-bot-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+          cd deploy
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${{ steps.get-bot-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: pip install requests==2.34.2 GitPython==3.1.57
+
+      - name: Run deployment script
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          COMPONENT: ${{ inputs.component }}
+          VERSION_VARIABLE: ${{ inputs.version_variable }}
+          STATUS_URL: ${{ inputs.status_url }}
+          OTHER_RELEASE_PREFIX: ${{ inputs.other_release_prefix }}
+        run: |
+          ./dot-github/bin/deploy-release.py \
+            "$VERSION_NUMBER" \
+            "$ENVIRONMENT" \
+            --deploy-repo ./deploy \
+            --component "$COMPONENT" \
+            --version-variable "$VERSION_VARIABLE" \
+            --status-url "$STATUS_URL" \
+            --other-release-prefix "$OTHER_RELEASE_PREFIX"
+
+      - name: Tag infra deploy
+        if: inputs.tag_infra && inputs.environment == 'prod'
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          TAG="${VERSION}+${BUILD_NUMBER}"
+          cd deploy
+          git tag -a "$TAG" -m "Deploy $TAG"
+          git push origin "$TAG"
