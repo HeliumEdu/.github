@@ -3,7 +3,8 @@ name: Terraform Deploy (Bump a component's version in infra and apply it)
 # Commits the component's version variable to `terraform/environments/<environment>/variables.tf` in HeliumEdu/infra
 # (`[<component>] Deploy X.Y.Z to <environment>`), applies the matching Terraform Cloud run (discarding competing runs,
 # except the other release's, which that release applies), and waits until `status_url` reports the version. A re-run
-# with nothing to commit applies the run if it's still waiting. The caller verifies the release's artifacts first.
+# with nothing to commit applies the run if it's still waiting, or starts a new one if it failed. The caller verifies
+# the release's artifacts first.
 on:
   workflow_call:
     inputs:

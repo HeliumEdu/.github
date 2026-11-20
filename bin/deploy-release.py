@@ -181,8 +181,8 @@ def find_and_apply_terraform_run(environment, version, terraform_token, componen
     """
     Find the Terraform run for this release and apply it, discarding competing runs. A new run is one created after
     ``pushed_at``, so an older run of the same version (a rollback or redeploy) isn't mistaken for it. A re-run that had
-    nothing to commit (``expect_new_run`` False) applies the release's run if it's still waiting, and otherwise has
-    nothing to do.
+    nothing to commit (``expect_new_run`` False) applies the release's run if it's still waiting, starts a new one if
+    it failed, and otherwise has nothing to do.
     """
     print(f"\nFinding and applying Terraform run ...")
 
@@ -261,8 +261,21 @@ def find_and_apply_terraform_run(environment, version, terraform_token, componen
                   f"nothing to apply")
             return True
         if status in TERRAFORM_FAILED_STATUSES:
-            print(f"✗ [{component}] run {release_run['id']} for version {version} is {status}")
-            return False
+            if expect_new_run:
+                print(f"✗ [{component}] run {release_run['id']} for version {version} is {status}")
+                return False
+            print(f"  [{component}] run {release_run['id']} for version {version} is {status}, starting a new run ...")
+            new_run_resp = _tfc_request("POST", f"{TERRAFORM_API}/runs", headers, json={
+                "data": {
+                    "type": "runs",
+                    "attributes": {"message": f"[{component}] Deploy {version} to {environment}"},
+                    "relationships": {"workspace": {"data": {"type": "workspaces", "id": workspace_id}}},
+                }
+            })
+            new_run_resp.raise_for_status()
+            pushed_at = datetime.fromisoformat(
+                new_run_resp.json()['data']['attributes']['created-at'].replace('Z', '+00:00'))
+            expect_new_run = True
 
     if not run_id:
         print(f"✗ No [{component}] planned run found within {timeout_minutes} minutes")
